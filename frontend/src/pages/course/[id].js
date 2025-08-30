@@ -1,9 +1,13 @@
-import { useRouter } from 'next/router';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from "next/router";
+import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+const RichEditor = dynamic(() => import("@/components/RichEditor"), {
+  ssr: false,
+});
 
 function getToken() {
-  if (typeof window === 'undefined') return '';
-  return localStorage.getItem('token') || '';
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("token") || "";
 }
 
 export default function CourseEditor() {
@@ -11,11 +15,11 @@ export default function CourseEditor() {
   const { id } = router.query;
 
   const [course, setCourse] = useState(null);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [chapterBusyId, setChapterBusyId] = useState(null);
 
   const apiBase = useMemo(() => process.env.NEXT_PUBLIC_API_URL, []);
@@ -24,16 +28,21 @@ export default function CourseEditor() {
     if (!id) return;
     (async () => {
       setLoading(true);
-      setError('');
+      setError("");
       try {
         const res = await fetch(`${apiBase}/course/${id}`, {
-          headers: { Authorization: `Bearer ${getToken()}` }
+          headers: { Authorization: `Bearer ${getToken()}` },
         });
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          window.location.href = "/login";
+          return;
+        }
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to load course');
+        if (!res.ok) throw new Error(data.error || "Failed to load course");
         setCourse(data);
-        setTitle(data.title || '');
-        setDescription(data.description || '');
+        setTitle(data.title || "");
+        setDescription(data.description || "");
       } catch (e) {
         setError(e.message);
       } finally {
@@ -45,18 +54,23 @@ export default function CourseEditor() {
   async function saveCourse() {
     if (!course) return;
     setSaving(true);
-    setError('');
+    setError("");
     try {
       const res = await fetch(`${apiBase}/course/${course._id}`, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
         },
-        body: JSON.stringify({ title, description, chapters: course.chapters })
+        body: JSON.stringify({ title, description, chapters: course.chapters }),
       });
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+        return;
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Save failed');
+      if (!res.ok) throw new Error(data.error || "Save failed");
       setCourse(data);
     } catch (e) {
       setError(e.message);
@@ -67,18 +81,28 @@ export default function CourseEditor() {
 
   async function generateChapter(chapterId) {
     setChapterBusyId(chapterId);
-    setError('');
+    setError("");
     try {
-      const res = await fetch(`${apiBase}/course/${course._id}/chapter/${chapterId}/generate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
+      const res = await fetch(
+        `${apiBase}/course/${course._id}/chapter/${chapterId}/generate`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${getToken()}` },
+        }
+      );
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+        return;
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Generation failed');
+      if (!res.ok) throw new Error(data.error || "Generation failed");
       // update local chapter
       setCourse((prev) => {
         const copy = { ...prev };
-        copy.chapters = copy.chapters.map((ch) => (ch._id === chapterId ? { ...ch, ...data } : ch));
+        copy.chapters = copy.chapters.map((ch) =>
+          ch._id === chapterId ? { ...ch, ...data } : ch
+        );
         return copy;
       });
     } catch (e) {
@@ -86,6 +110,19 @@ export default function CourseEditor() {
     } finally {
       setChapterBusyId(null);
     }
+  }
+
+  function moveChapter(chapterId, direction) {
+    setCourse((prev) => {
+      const idx = prev.chapters.findIndex((c) => c._id === chapterId);
+      if (idx === -1) return prev;
+      const newIndex = direction === "up" ? idx - 1 : idx + 1;
+      if (newIndex < 0 || newIndex >= prev.chapters.length) return prev;
+      const chapters = [...prev.chapters];
+      const [item] = chapters.splice(idx, 1);
+      chapters.splice(newIndex, 0, item);
+      return { ...prev, chapters };
+    });
   }
 
   if (loading) return <div className="p-6">Loading...</div>;
@@ -96,14 +133,89 @@ export default function CourseEditor() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Edit Course</h1>
-        <button onClick={() => router.push('/dashboard')} className="text-sm underline">Back to Dashboard</button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={async () => {
+              if (!course) return;
+              const res = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/export/${course._id}`,
+                {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${getToken()}` },
+                }
+              );
+              const blob = await res.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${(title || "course").replace(
+                /[^a-z0-9-_]+/gi,
+                "_"
+              )}.json`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              window.URL.revokeObjectURL(url);
+            }}
+            className="text-sm underline"
+          >
+            Export JSON
+          </button>
+          <button
+            onClick={async () => {
+              if (!course) return;
+              const res = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/export/${course._id}/pdf`,
+                {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${getToken()}` },
+                }
+              );
+              const blob = await res.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${(title || "course").replace(
+                /[^a-z0-9-_]+/gi,
+                "_"
+              )}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              window.URL.revokeObjectURL(url);
+            }}
+            className="text-sm underline"
+          >
+            Export PDF
+          </button>
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="text-sm underline"
+          >
+            Back to Dashboard
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3">
-        <input className="w-full border rounded p-2" value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="Course title" />
-        <textarea className="w-full border rounded p-2 h-28" value={description} onChange={(e)=>setDescription(e.target.value)} placeholder="Description" />
-        <button onClick={saveCourse} disabled={saving || !title} className="bg-black text-white px-4 py-2 rounded">
-          {saving ? 'Saving...' : 'Save'}
+        <input
+          className="w-full border rounded p-2"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Course title"
+        />
+        <textarea
+          className="w-full border rounded p-2 h-28"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Description"
+        />
+        <button
+          onClick={saveCourse}
+          disabled={saving || !title}
+          className="bg-black text-white px-4 py-2 rounded"
+        >
+          {saving ? "Saving..." : "Save"}
         </button>
       </div>
 
@@ -113,7 +225,18 @@ export default function CourseEditor() {
           <ul className="space-y-3">
             {course.chapters.map((ch) => (
               <li key={ch._id} className="border rounded p-3 space-y-2">
-                <div className="font-medium">{ch.title}</div>
+                <input
+                  className="font-medium border-b focus:outline-none"
+                  value={ch.title}
+                  onChange={(e) =>
+                    setCourse((prev) => ({
+                      ...prev,
+                      chapters: prev.chapters.map((c) =>
+                        c._id === ch._id ? { ...c, title: e.target.value } : c
+                      ),
+                    }))
+                  }
+                />
                 <div className="text-sm text-gray-600">{ch._id}</div>
                 <div className="flex items-center gap-2">
                   <button
@@ -121,35 +244,75 @@ export default function CourseEditor() {
                     disabled={chapterBusyId === ch._id}
                     className="bg-black text-white px-3 py-1 rounded text-sm"
                   >
-                    {chapterBusyId === ch._id ? 'Generating...' : 'Generate content'}
+                    {chapterBusyId === ch._id
+                      ? "Generating..."
+                      : "Generate content"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-sm underline"
+                    onClick={() => moveChapter(ch._id, "up")}
+                  >
+                    Move Up
+                  </button>
+                  <button
+                    type="button"
+                    className="text-sm underline"
+                    onClick={() => moveChapter(ch._id, "down")}
+                  >
+                    Move Down
                   </button>
                 </div>
-                {ch.content && (
-                  <div className="space-y-2">
-                    <div>
-                      <div className="font-semibold">Content</div>
-                      <div className="whitespace-pre-wrap text-sm">{ch.content}</div>
-                    </div>
-                    <div>
-                      <div className="font-semibold">Explanation</div>
-                      <div className="whitespace-pre-wrap text-sm">{ch.explanation}</div>
-                    </div>
-                    <div>
-                      <div className="font-semibold">Code Example</div>
-                      <pre className="bg-gray-100 p-2 rounded text-sm overflow-auto"><code>{ch.codeExample}</code></pre>
-                    </div>
-                    {!!(ch.references || []).length && (
-                      <div>
-                        <div className="font-semibold">References</div>
-                        <ul className="list-disc pl-5 text-sm">
-                          {(ch.references || []).map((r, i) => (
-                            <li key={i}><a className="underline" href={r} target="_blank" rel="noreferrer">{r}</a></li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                <div className="space-y-2">
+                  <div>
+                    <div className="font-semibold">Content</div>
+                    <RichEditor
+                      value={ch.content || ""}
+                      onChange={(html) =>
+                        setCourse((prev) => ({
+                          ...prev,
+                          chapters: prev.chapters.map((c) =>
+                            c._id === ch._id ? { ...c, content: html } : c
+                          ),
+                        }))
+                      }
+                      placeholder="Write chapter content..."
+                    />
                   </div>
-                )}
+                  <div>
+                    <div className="font-semibold">Explanation</div>
+                    <RichEditor
+                      value={ch.explanation || ""}
+                      onChange={(html) =>
+                        setCourse((prev) => ({
+                          ...prev,
+                          chapters: prev.chapters.map((c) =>
+                            c._id === ch._id ? { ...c, explanation: html } : c
+                          ),
+                        }))
+                      }
+                      placeholder="Explain the concepts..."
+                    />
+                  </div>
+                  <div>
+                    <div className="font-semibold">Code Example</div>
+                    <textarea
+                      className="w-full border rounded p-2 font-mono text-sm"
+                      value={ch.codeExample || ""}
+                      onChange={(e) =>
+                        setCourse((prev) => ({
+                          ...prev,
+                          chapters: prev.chapters.map((c) =>
+                            c._id === ch._id
+                              ? { ...c, codeExample: e.target.value }
+                              : c
+                          ),
+                        }))
+                      }
+                      placeholder="Code sample..."
+                    />
+                  </div>
+                </div>
               </li>
             ))}
           </ul>
@@ -160,5 +323,3 @@ export default function CourseEditor() {
     </div>
   );
 }
-
-

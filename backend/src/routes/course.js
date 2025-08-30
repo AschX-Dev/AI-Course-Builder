@@ -7,6 +7,7 @@ const {
 } = require("../services/ai");
 
 const router = express.Router();
+const path = require("path");
 
 // Generate outline
 router.post("/generate", auth, async (req, res) => {
@@ -53,6 +54,29 @@ router.put("/:id", auth, async (req, res) => {
   );
   if (!course) return res.status(404).json({ error: "not found" });
   res.json(course);
+});
+
+// Delete course
+router.delete("/:id", auth, async (req, res) => {
+  const query = {
+    _id: req.params.id,
+    ownerId: req.user.id,
+  };
+  try {
+    const deleted = await Course.findOneAndDelete(query);
+    if (!deleted) {
+      console.log("DELETE /course not found", { query });
+      return res.status(404).json({ error: "not found" });
+    }
+    console.log("DELETE /course ok", {
+      id: deleted._id.toString(),
+      ownerId: deleted.ownerId.toString(),
+    });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("DELETE /course error", { query, error: e.message });
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 // Generate chapter content

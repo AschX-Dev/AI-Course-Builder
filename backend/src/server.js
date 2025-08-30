@@ -7,6 +7,7 @@ dotenv.config();
 
 const authRoutes = require("./routes/auth");
 const courseRoutes = require("./routes/course");
+const exportRoutes = require("./routes/export");
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/auth", authRoutes);
 app.use("/course", courseRoutes);
+app.use("/export", exportRoutes);
 
 const PORT = process.env.PORT;
 const MONGODB_URI = process.env.MONGODB_URI;

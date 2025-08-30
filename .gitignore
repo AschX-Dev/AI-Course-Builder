@@ -1,0 +1,8 @@
+backend/.env
+frontend/.env.local
+**/node_modules/
+**/.next/
+**/dist/
+.DS_Store
+.eslintcache
+coverage/
