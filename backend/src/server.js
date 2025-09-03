@@ -20,6 +20,16 @@ app.get("/health", (_req, res) => {
 
 app.use("/auth", authRoutes);
 app.use("/course", courseRoutes);
+// Public fetch by shareId (no auth)
+app.get("/course/public/:shareId", async (req, res) => {
+  const Course = require("./models/Course");
+  const course = await Course.findOne({
+    shareId: req.params.shareId,
+    isPublic: true,
+  });
+  if (!course) return res.status(404).json({ error: "not found" });
+  res.json(course);
+});
 app.use("/export", exportRoutes);
 
 const PORT = process.env.PORT;

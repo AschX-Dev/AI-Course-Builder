@@ -189,6 +189,41 @@ export default function CourseEditor() {
             Export PDF
           </button>
           <button
+            onClick={async () => {
+              if (!course) return;
+              const endpoint = course.isPublic ? "unpublish" : "publish";
+              const res = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/course/${course._id}/${endpoint}`,
+                {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${getToken()}` },
+                }
+              );
+              const data = await res.json();
+              if (!res.ok) return alert(data.error || "Failed");
+              setCourse((prev) => ({
+                ...prev,
+                isPublic: endpoint === "publish",
+                shareId: data.shareId || null,
+              }));
+            }}
+            className="text-sm underline"
+          >
+            {course?.isPublic ? "Unpublish" : "Publish"}
+          </button>
+          {course?.isPublic && (
+            <button
+              onClick={() => {
+                const url = `${window.location.origin}/share/${course.shareId}`;
+                navigator.clipboard?.writeText(url);
+                alert("Share link copied to clipboard");
+              }}
+              className="text-sm underline"
+            >
+              Copy Share Link
+            </button>
+          )}
+          <button
             onClick={() => router.push("/dashboard")}
             className="text-sm underline"
           >

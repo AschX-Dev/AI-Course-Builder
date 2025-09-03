@@ -7,7 +7,7 @@ function getGeminiClient() {
   return new GoogleGenerativeAI(key);
 }
 
-async function generateCourseOutline(title, topic) {
+async function generateCourseOutline(title, topic, options = {}) {
   const client = getGeminiClient();
   if (!client) {
     return {
@@ -22,12 +22,30 @@ async function generateCourseOutline(title, topic) {
   }
 
   const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
-  const prompt = `You are a course designer. Return JSON only with keys: title, description, chapters[].title. Input: title="${title}", topic="${topic}"`;
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: "application/json" },
-  });
-  const text = result.response.text();
+  const prompt = `You are a course designer. Return JSON only with keys: title, description, chapters[].title.
+Input:
+  title="${title}", topic="${topic}",
+  difficulty="${options.difficulty || "Beginner"}",
+  duration="${options.duration || "1 Hour"}",
+  addVideo=${options.addVideo ? "Yes" : "No"},
+  desiredChapters=${Number(options.desiredChapters || 5)}
+Ensure chapters length is close to desiredChapters.`;
+  let attempts = 0;
+  let text = "";
+  while (attempts < 3) {
+    try {
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" },
+      });
+      text = result.response.text();
+      break;
+    } catch (e) {
+      attempts += 1;
+      await new Promise((r) => setTimeout(r, 300 * attempts));
+      if (attempts >= 3) throw e;
+    }
+  }
   try {
     const parsed = JSON.parse(text);
     if (!parsed || !Array.isArray(parsed.chapters))
@@ -61,11 +79,22 @@ async function generateChapterContent(chapterTitle, topic) {
 
   const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
   const prompt = `You are a technical educator. Return JSON only with keys: content, explanation, codeExample, references[]. Input: topic="${topic}", chapterTitle="${chapterTitle}"`;
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: "application/json" },
-  });
-  const text = result.response.text();
+  let attempts = 0;
+  let text = "";
+  while (attempts < 3) {
+    try {
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" },
+      });
+      text = result.response.text();
+      break;
+    } catch (e) {
+      attempts += 1;
+      await new Promise((r) => setTimeout(r, 300 * attempts));
+      if (attempts >= 3) throw e;
+    }
+  }
   try {
     const parsed = JSON.parse(text);
     if (!parsed || !parsed.content) throw new Error("bad shape");
